@@ -1,12 +1,13 @@
 class BookingModel {
-  String? id;
-  String customerName;
-  String phone;
-  String restaurantName;
-  String date;
-  String time;
-  int partySize;
-  double rating;
+  final int? id;
+  final String customerName;
+  final String phone;
+  final String restaurantName;
+  final String date;
+  final String time;
+  final int partySize;
+  final double rating;
+  final String status;
 
   BookingModel({
     this.id,
@@ -16,24 +17,13 @@ class BookingModel {
     required this.date,
     required this.time,
     required this.partySize,
-    this.rating = 5.0,
+    required this.rating,
+    this.status = 'Pending',
   });
 
-  factory BookingModel.fromJson(Map<String, dynamic> json, String docId) {
-    return BookingModel(
-      id: docId,
-      customerName: json['customerName'] ?? '',
-      phone: json['phone'] ?? '',
-      restaurantName: json['restaurantName'] ?? '',
-      date: json['date'] ?? '',
-      time: json['time'] ?? '',
-      partySize: json['partySize'] ?? 1,
-      rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'customerName': customerName,
       'phone': phone,
       'restaurantName': restaurantName,
@@ -41,6 +31,21 @@ class BookingModel {
       'time': time,
       'partySize': partySize,
       'rating': rating,
+      'status': status,
     };
+  }
+
+  factory BookingModel.fromMap(Map<String, dynamic> map) {
+    return BookingModel(
+      id: map['id'],
+      customerName: map['customerName'],
+      phone: map['phone'],
+      restaurantName: map['restaurantName'],
+      date: map['date'],
+      time: map['time'],
+      partySize: map['partySize'],
+      rating: map['rating'],
+      status: map['status'] ?? 'Pending',
+    );
   }
 }

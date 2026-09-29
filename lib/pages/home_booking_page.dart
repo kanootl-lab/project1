@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/booking_model.dart';
 import '../services/database_helper.dart';
 import 'add_edit_booking_page.dart';
+import 'admin_page.dart';
 
 class HomeBookingPage extends StatefulWidget {
   const HomeBookingPage({super.key});
@@ -12,7 +12,47 @@ class HomeBookingPage extends StatefulWidget {
 }
 
 class _HomeBookingPageState extends State<HomeBookingPage> {
-  final DatabaseHelper _dbHelper = DatabaseHelper();
+  // ฟังก์ชันแสดง Dialog ยืนยันการลบรายการจอง
+  Future<bool> _showDeleteDialog(int id) async {
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ยืนยันการลบ'),
+        content: const Text('คุณต้องการลบรายการจองนี้ใช่หรือไม่?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              await DatabaseHelper().deleteBooking(id);
+              if (mounted) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('ลบ', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return confirm ?? false;
+  }
+
+  // กำหนดสีของป้ายสถานะ (Status Chip)
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Confirmed':
+        return Colors.green;
+      case 'Completed':
+        return Colors.blue;
+      case 'Cancelled':
+        return Colors.red;
+      default:
+        return Colors.orange; // Pending
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,25 +61,40 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
         title: const Text('รายการจองโต๊ะอาหาร'),
         backgroundColor: Colors.deepOrange,
         foregroundColor: Colors.white,
+        actions: [
+          // ปุ่มเข้าสู่หน้า Admin เพื่อจัดการโควตาร้านค้า
+          IconButton(
+            icon: const Icon(Icons.admin_panel_settings),
+            tooltip: 'จัดการร้านค้า (Admin)',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AdminPage()),
+              );
+              setState(() {}); // รีเฟรชหน้าเมื่อกลับมาจากหน้า Admin
+            },
+          ),
+        ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _dbHelper.getBookingsStream(),
+      body: FutureBuilder<List<BookingModel>>(
+        future: DatabaseHelper().getBookings(), // ดึงข้อมูลรายการจองจาก SQLite
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('ยังไม่มีรายการจอง'));
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+              child: Text(
+                'ยังไม่มีรายการจอง',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            );
           }
 
-          final docs = snapshot.data!.docs;
-          List<BookingModel> bookings = docs
-              .map((doc) => BookingModel.fromJson(doc.data() as Map<String, dynamic>, doc.id))
-              .toList();
+          final bookings = snapshot.data!;
 
           return LayoutBuilder(
             builder: (context, constraints) {
-              bool isTablet = constraints.maxWidth > 600;
               return ListView.separated(
                 padding: const EdgeInsets.all(12),
                 itemCount: bookings.length,
@@ -47,7 +102,8 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
                 itemBuilder: (context, index) {
                   final item = bookings[index];
                   return Dismissible(
-                    key: Key(item.id!),
+                    // แปลง int id เป็น String เพื่อให้ตรงกับประเภทข้อมูลของ Key
+                    key: Key(item.id.toString()),
                     background: Container(
                       color: Colors.blue,
                       alignment: Alignment.centerLeft,
@@ -62,15 +118,24 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
                     ),
                     confirmDismiss: (direction) async {
                       if (direction == DismissDirection.startToEnd) {
-                        Navigator.push(
+                        // ปัดขวา -> เข้าสู่หน้าแก้ไขข้อมูลการจอง
+                        bool? updated = await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => AddEditBookingPage(booking: item),
                           ),
                         );
+                        if (updated == true) {
+                          setState(() {}); // รีเฟรชข้อมูลเมื่ออัปเดตเรียบร้อย
+                        }
                         return false;
                       } else {
-                        return await _showDeleteDialog(item.id!);
+                        // ปัดซ้าย -> ยืนยันการลบ
+                        bool isDeleted = await _showDeleteDialog(item.id!);
+                        if (isDeleted) {
+                          setState(() {}); // รีเฟรชข้อมูลเมื่อลบเรียบร้อย
+                        }
+                        return isDeleted;
                       }
                     },
                     child: Card(
@@ -78,22 +143,20 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
                       child: ListTile(
                         title: Text(
                           item.restaurantName,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
                           'ผู้จอง: ${item.customerName} (${item.partySize} ท่าน)\n'
-                          'วันที่: ${item.date} เวลา: ${item.time}\n'
-                          'คะแนนความประทับใจ: ⭐ ${item.rating}',
+                          'วันที่: ${item.date} | เวลา: ${item.time} น.\n'
+                          'เบอร์โทร: ${item.phone}',
                         ),
-                        trailing: isTablet ? Text(item.phone) : null,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AddEditBookingPage(booking: item),
-                            ),
-                          );
-                        },
+                        trailing: Chip(
+                          label: Text(
+                            item.status,
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                          backgroundColor: _getStatusColor(item.status),
+                        ),
                       ),
                     ),
                   );
@@ -103,42 +166,22 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
           );
         },
       ),
+      // ปุ่มบวกสำหรับเพิ่มการจองใหม่
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.deepOrange,
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          bool? added = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => const AddEditBookingPage(),
             ),
           );
+          if (added == true) {
+            setState(() {}); // รีเฟรชข้อมูลเมื่อเพิ่มการจองใหม่สำเร็จ
+          }
         },
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
-  }
-
-  Future<bool> _showDeleteDialog(String id) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('ยืนยันการลบ'),
-            content: const Text('คุณต้องการลบรายการจองนี้ใช่หรือไม่?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('ยกเลิก'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await _dbHelper.deleteBooking(id);
-                  Navigator.pop(context, true);
-                },
-                child: const Text('ลบ', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
   }
 }
