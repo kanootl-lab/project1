@@ -22,7 +22,7 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
   String _selectedTime = '12:00';
   int _partySize = 1;
   double _rating = 5.0;
-  String _status = 'Pending';
+  String _status = 'Pending'; // ค่าเริ่มต้นสำหรับการจองใหม่
 
   final List<String> _restaurantList = [
     'ร้านมุมการ์เด้น (Moom Garden)',
@@ -51,11 +51,14 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
         }
       }
 
-      _selectedDate = DateTime.parse(widget.booking!.date);
+      try {
+        _selectedDate = DateTime.parse(widget.booking!.date);
+      } catch (_) {}
+
       _selectedTime = widget.booking!.time;
       _partySize = widget.booking!.partySize;
       _rating = widget.booking!.rating;
-      _status = widget.booking!.status;
+      _status = widget.booking!.status; // ดึงสถานะเดิมมาแสดงแบบ Read-only
     } else {
       _customerName = '';
       _phone = '';
@@ -67,7 +70,9 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
       _formKey.currentState!.save();
       String formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
-      var settings = await DatabaseHelper().getRestaurantSettings(_restaurantName);
+      final dbHelper = DatabaseHelper();
+
+      var settings = await dbHelper.getRestaurantSettings(_restaurantName);
       bool isOpen = (settings?['isOpen'] ?? 1) == 1;
       int maxCapacity = settings?['maxCapacity'] ?? 20;
 
@@ -76,7 +81,7 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
         return;
       }
 
-      int currentBooked = await DatabaseHelper().getTotalBookedSeats(_restaurantName, formattedDate);
+      int currentBooked = await dbHelper.getTotalBookedSeats(_restaurantName, formattedDate);
       
       if (widget.booking != null && widget.booking!.status != 'Cancelled') {
         currentBooked -= widget.booking!.partySize;
@@ -102,13 +107,13 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
         time: _selectedTime,
         partySize: _partySize,
         rating: _rating,
-        status: _status,
+        status: _status, // ใช้สถานะเดิม (หรือ Pending สำหรับการจองใหม่)
       );
 
       if (widget.booking == null) {
-        await DatabaseHelper().addBooking(newBooking);
+        await dbHelper.addBooking(newBooking);
       } else {
-        await DatabaseHelper().updateBooking(widget.booking!.id!, newBooking);
+        await dbHelper.updateBooking(widget.booking!.id!, newBooking);
       }
 
       if (mounted) {
@@ -137,6 +142,19 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
         ],
       ),
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Confirmed':
+        return Colors.green;
+      case 'Completed':
+        return Colors.blue;
+      case 'Cancelled':
+        return Colors.red;
+      default:
+        return Colors.orange;
+    }
   }
 
   @override
@@ -245,21 +263,38 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
               ),
               const SizedBox(height: 16),
 
+              // 🔒 ส่วนแสดงสถานะการจองแบบ Read-only (ผู้ใช้ทั่วไปแก้ไขไม่ได้ ต้องรอแอดมินเปลี่ยน)
               if (widget.booking != null) ...[
-                DropdownButtonFormField<String>(
-                  value: _status,
-                  decoration: const InputDecoration(
-                    labelText: 'สถานะการจอง (Booking Status)',
-                    prefixIcon: Icon(Icons.info_outline),
-                    border: OutlineInputBorder(),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'Pending', child: Text('Pending (รอยืนยัน)')),
-                    DropdownMenuItem(value: 'Confirmed', child: Text('Confirmed (ยืนยันแล้ว)')),
-                    DropdownMenuItem(value: 'Completed', child: Text('Completed (ทานอาหารแล้ว)')),
-                    DropdownMenuItem(value: 'Cancelled', child: Text('Cancelled (ยกเลิกการจอง)')),
-                  ],
-                  onChanged: (val) => setState(() => _status = val!),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: Colors.grey),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'สถานะการจอง:',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      Chip(
+                        label: Text(
+                          _status,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        backgroundColor: _getStatusColor(_status),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '* สถานะการจองจะได้รับการอัปเดตโดยผู้ดูแลระบบ (Admin) เท่านั้น',
+                  style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic),
                 ),
                 const SizedBox(height: 24),
               ] else
@@ -275,7 +310,10 @@ class _AddEditBookingPageState extends State<AddEditBookingPage> {
                   ),
                   onPressed: _saveForm,
                   icon: const Icon(Icons.save),
-                  label: Text(widget.booking == null ? 'ยืนยันการจอง' : 'อัปเดตการจอง', style: const TextStyle(fontSize: 16)),
+                  label: Text(
+                    widget.booking == null ? 'ยืนยันการจอง' : 'บันทึกการแก้ไข',
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
               ),
             ],

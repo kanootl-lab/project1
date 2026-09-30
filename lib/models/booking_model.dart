@@ -17,10 +17,26 @@ class BookingModel {
     required this.date,
     required this.time,
     required this.partySize,
-    required this.rating,
+    this.rating = 5.0,
     this.status = 'Pending',
   });
 
+  // แปลงจาก Map เป็น BookingModel (ใช้ตอนดึงจาก Database)
+  factory BookingModel.fromMap(Map<String, dynamic> map) {
+    return BookingModel(
+      id: map['id'],
+      customerName: map['customerName'] ?? '',
+      phone: map['phone'] ?? '',
+      restaurantName: map['restaurantName'] ?? '',
+      date: map['date'] ?? '',
+      time: map['time'] ?? '',
+      partySize: map['partySize'] ?? 1,
+      rating: (map['rating'] ?? 5.0).toDouble(),
+      status: map['status'] ?? 'Pending',
+    );
+  }
+
+  // แปลงจาก BookingModel เป็น Map (ใช้ตอนบันทึกลง Database)
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -33,19 +49,5 @@ class BookingModel {
       'rating': rating,
       'status': status,
     };
-  }
-
-  factory BookingModel.fromMap(Map<String, dynamic> map) {
-    return BookingModel(
-      id: map['id'],
-      customerName: map['customerName'],
-      phone: map['phone'],
-      restaurantName: map['restaurantName'],
-      date: map['date'],
-      time: map['time'],
-      partySize: map['partySize'],
-      rating: map['rating'],
-      status: map['status'] ?? 'Pending',
-    );
   }
 }

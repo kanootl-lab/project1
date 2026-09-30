@@ -40,6 +40,65 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
     return confirm ?? false;
   }
 
+  // ฟังก์ชันสำหรับตรวจรหัสผ่านก่อนเข้าหน้า Admin
+  void _navigateToAdminPage() {
+    final TextEditingController passwordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.admin_panel_settings, color: Colors.blueGrey),
+            SizedBox(width: 8),
+            Text('ยืนยันสิทธิ์ Admin'),
+          ],
+        ),
+        content: TextField(
+          controller: passwordController,
+          obscureText: true, // ปิดบังรหัสผ่านด้วยจุดดำ
+          keyboardType: TextInputType.number, // ช่องกรอกรหัสตัวเลข
+          decoration: const InputDecoration(
+            labelText: 'กรุณากรอกรหัสผ่าน Admin',
+            hintText: 'ใส่รหัส เช่น 1234',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.lock),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade800),
+            onPressed: () async {
+              // *** สามารถเปลี่ยนรหัสผ่าน Admin ได้ที่นี่ (ปัจจุบันคือ 1234) ***
+              if (passwordController.text == '1234') {
+                Navigator.pop(context); // ปิด Dialog
+                
+                // เปิดไปหน้า Admin
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AdminPage()),
+                );
+                setState(() {}); // รีเฟรชหน้าหลักเมื่อกลับมา
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('รหัสผ่านไม่ถูกต้อง!'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: const Text('ตกลง', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // กำหนดสีของป้ายสถานะ (Status Chip)
   Color _getStatusColor(String status) {
     switch (status) {
@@ -62,17 +121,11 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
         backgroundColor: Colors.deepOrange,
         foregroundColor: Colors.white,
         actions: [
-          // ปุ่มเข้าสู่หน้า Admin เพื่อจัดการโควตาร้านค้า
+          // ปุ่มไอคอน Admin เรียกใช้ฟังก์ชันตรวจสอบรหัสผ่าน
           IconButton(
             icon: const Icon(Icons.admin_panel_settings),
             tooltip: 'จัดการร้านค้า (Admin)',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AdminPage()),
-              );
-              setState(() {}); // รีเฟรชหน้าเมื่อกลับมาจากหน้า Admin
-            },
+            onPressed: _navigateToAdminPage,
           ),
         ],
       ),
@@ -102,7 +155,6 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
                 itemBuilder: (context, index) {
                   final item = bookings[index];
                   return Dismissible(
-                    // แปลง int id เป็น String เพื่อให้ตรงกับประเภทข้อมูลของ Key
                     key: Key(item.id.toString()),
                     background: Container(
                       color: Colors.blue,
@@ -166,7 +218,6 @@ class _HomeBookingPageState extends State<HomeBookingPage> {
           );
         },
       ),
-      // ปุ่มบวกสำหรับเพิ่มการจองใหม่
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.deepOrange,
         onPressed: () async {

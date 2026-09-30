@@ -7,8 +7,8 @@ class MemberPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final member = MemberModel(
-      name: 'นาย นิสิต มุ่งมั่น',
-      studentId: '65xxxxxx21',
+      name: 'นาย คณุตม์ ลาวัณย์วิสุทธิ์',
+      studentId: '6721652005',
       role: 'Full Stack Developer (Solo Project)',
     );
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/booking_model.dart';
 import '../services/database_helper.dart';
+import 'add_edit_booking_page.dart';
 
 class AdminPage extends StatefulWidget {
   const AdminPage({super.key});
@@ -10,51 +12,87 @@ class AdminPage extends StatefulWidget {
 }
 
 class _AdminPageState extends State<AdminPage> {
-  final List<String> _restaurantList = [
-    'ร้านมุมการ์เด้น (Moom Garden)',
-    'Sizzler (ซิซซ์เล่อร์)',
-    'MK Restaurants',
-    'Shabu Shi (ชาบูชิ)',
-    'Bar B Q Plaza (บาร์บีคิวพลาซ่า)',
-    'Greyhound Café',
-    'Katsuya (คัตสึยะ)',
-  ];
-
-  String _selectedRestaurant = 'ร้านมุมการ์เด้น (Moom Garden)';
-  int _maxCapacity = 20;
-  bool _isOpen = true;
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+  List<BookingModel> _allBookings = [];
+  List<BookingModel> _filteredBookings = [];
   bool _isLoading = true;
-  List<BookingModel> _bookings = [];
+  String _selectedFilter = 'All';
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadBookings();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadBookings() async {
     setState(() => _isLoading = true);
-    var settings = await DatabaseHelper().getRestaurantSettings(_selectedRestaurant);
-    if (settings != null) {
-      _maxCapacity = settings['maxCapacity'] ?? 20;
-      _isOpen = (settings['isOpen'] ?? 1) == 1;
-    }
-    _bookings = await DatabaseHelper().getBookings();
-    setState(() => _isLoading = false);
+    final bookings = await _dbHelper.getBookings();
+    setState(() {
+      _allBookings = bookings;
+      _applyFilter(_selectedFilter);
+      _isLoading = false;
+    });
   }
 
-  Future<void> _saveSettings() async {
-    await DatabaseHelper().updateRestaurantSettings(_selectedRestaurant, _maxCapacity, _isOpen);
+  void _applyFilter(String status) {
+    _selectedFilter = status;
+    if (status == 'All') {
+      _filteredBookings = _allBookings;
+    } else {
+      _filteredBookings = _allBookings.where((b) => b.status == status).toList();
+    }
+  }
+
+  Future<void> _updateStatus(BookingModel booking, String newStatus) async {
+    BookingModel updatedBooking = BookingModel(
+      id: booking.id,
+      customerName: booking.customerName,
+      phone: booking.phone,
+      restaurantName: booking.restaurantName,
+      date: booking.date,
+      time: booking.time,
+      partySize: booking.partySize,
+      rating: booking.rating,
+      status: newStatus,
+    );
+
+    await _dbHelper.updateBooking(booking.id!, updatedBooking);
+    _loadBookings();
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('อัปเดตการตั้งค่าร้านค้าเรียบร้อย!'), backgroundColor: Colors.green),
+        SnackBar(
+          content: Text('อัปเดตสถานะเป็น $newStatus สำเร็จ'),
+          duration: const Duration(seconds: 2),
+        ),
       );
     }
   }
 
-  Future<void> _changeStatus(int id, String status) async {
-    await DatabaseHelper().updateBookingStatus(id, status);
-    _loadData();
+  Future<void> _deleteBooking(int id) async {
+    bool confirm = await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('ยืนยันการลบ'),
+            content: const Text('คุณต้องการลบข้อมูลการจองนี้ใช่หรือไม่?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('ยกเลิก'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('ลบ', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (confirm) {
+      await _dbHelper.deleteBooking(id);
+      _loadBookings();
+    }
   }
 
   Color _getStatusColor(String status) {
@@ -72,126 +110,167 @@ class _AdminPageState extends State<AdminPage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Admin - จัดการร้านค้าและสถานะ'),
-          backgroundColor: Colors.blueGrey.shade800,
-          foregroundColor: Colors.white,
-          bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white60,
-            tabs: [
-              Tab(icon: Icon(Icons.settings), text: 'ตั้งค่าโควตาร้าน'),
-              Tab(icon: Icon(Icons.list_alt), text: 'รายการการจอง'),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('จัดการการจอง (Admin)'),
+        backgroundColor: Colors.deepOrange,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadBookings,
           ),
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                children: [
-                  // Tab 1: การตั้งค่าโควตา
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('เลือกร้านค้าที่ต้องการจัดการ:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: _selectedRestaurant,
-                          decoration: const InputDecoration(border: OutlineInputBorder()),
-                          items: _restaurantList.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() => _selectedRestaurant = val);
-                              _loadData();
-                            }
-                          },
-                        ),
-                        const Divider(height: 32),
-                        SwitchListTile(
-                          title: const Text('สถานะรับจองโต๊ะ', style: TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(_isOpen ? 'เปิดรับจองปกติ' : 'ปิดรับจองชั่วคราว (เต็ม/ร้านปิด)'),
-                          value: _isOpen,
-                          activeColor: Colors.green,
-                          onChanged: (val) => setState(() => _isOpen = val),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text('โควตาความจุสูงสุด (Max Capacity):', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            IconButton.filledTonal(
-                              onPressed: _maxCapacity > 0 ? () => setState(() => _maxCapacity -= 5) : null,
-                              icon: const Icon(Icons.remove),
-                            ),
-                            Expanded(
-                              child: Text('$_maxCapacity ท่าน', textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                            ),
-                            IconButton.filledTonal(
-                              onPressed: () => setState(() => _maxCapacity += 5),
-                              icon: const Icon(Icons.add),
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueGrey.shade800,
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: _saveSettings,
-                            icon: const Icon(Icons.save),
-                            label: const Text('บันทึกการตั้งค่าร้านค้า'),
-                          ),
-                        ),
-                      ],
+        ],
+      ),
+      body: Column(
+        children: [
+          // ตัวกรองสถานะ (Filter Bar)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+            color: Colors.grey.shade100,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: ['All', 'Pending', 'Confirmed', 'Completed', 'Cancelled'].map((status) {
+                  bool isSelected = _selectedFilter == status;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: FilterChip(
+                      selected: isSelected,
+                      label: Text(status),
+                      selectedColor: Colors.deepOrange.shade100,
+                      onSelected: (bool selected) {
+                        setState(() {
+                          _applyFilter(status);
+                        });
+                      },
                     ),
-                  ),
-
-                  // Tab 2: อนุมัติ/ยกเลิกสถานะการจอง
-                  _bookings.isEmpty
-                      ? const Center(child: Text('ยังไม่มีรายการจอง'))
-                      : ListView.builder(
-                          itemCount: _bookings.length,
-                          itemBuilder: (context, index) {
-                            final item = _bookings[index];
-                            return Card(
-                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              child: ListTile(
-                                title: Text('${item.customerName} (${item.partySize} ท่าน)'),
-                                subtitle: Text('${item.restaurantName}\nวันที่: ${item.date} | เวลา: ${item.time} น.'),
-                                isThreeLine: true,
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Chip(
-                                      label: Text(item.status, style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                      backgroundColor: _getStatusColor(item.status),
-                                    ),
-                                    PopupMenuButton<String>(
-                                      onSelected: (val) => _changeStatus(item.id!, val),
-                                      itemBuilder: (context) => const [
-                                        PopupMenuItem(value: 'Pending', child: Text('Pending (รอยืนยัน)')),
-                                        PopupMenuItem(value: 'Confirmed', child: Text('Confirmed (ยืนยันแล้ว)')),
-                                        PopupMenuItem(value: 'Completed', child: Text('Completed (มาใช้บริการแล้ว)')),
-                                        PopupMenuItem(value: 'Cancelled', child: Text('Cancelled (ยกเลิก)')),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ],
+                  );
+                }).toList(),
               ),
+            ),
+          ),
+
+          // รายการจอง (Booking List)
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredBookings.isEmpty
+                    ? const Center(child: Text('ไม่มีข้อมูลการจอง'))
+                    : ListView.builder(
+                        itemCount: _filteredBookings.length,
+                        padding: const EdgeInsets.all(8.0),
+                        itemBuilder: (context, index) {
+                          final booking = _filteredBookings[index];
+                          return Card(
+                            elevation: 2,
+                            margin: const EdgeInsets.symmetric(vertical: 6.0),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          booking.restaurantName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: _getStatusColor(booking.status).withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          booking.status,
+                                          style: TextStyle(
+                                            color: _getStatusColor(booking.status),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(),
+                                  Text('ชื่อลูกค้า: ${booking.customerName} (${booking.phone})'),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.calendar_month, size: 16, color: Colors.grey.shade600),
+                                      const SizedBox(width: 4),
+                                      Text('วันที่: ${booking.date}  |  เวลา: ${booking.time} น.'),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.people, size: 16, color: Colors.grey.shade600),
+                                      const SizedBox(width: 4),
+                                      Text('จำนวน: ${booking.partySize} ท่าน'),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+
+                                  // เมนูปรับเปลี่ยนสถานะ และปุ่มแก้ไข/ลบ
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      DropdownButton<String>(
+                                        value: booking.status,
+                                        underline: const SizedBox(),
+                                        items: const [
+                                          DropdownMenuItem(value: 'Pending', child: Text('Pending')),
+                                          DropdownMenuItem(value: 'Confirmed', child: Text('Confirmed')),
+                                          DropdownMenuItem(value: 'Completed', child: Text('Completed')),
+                                          DropdownMenuItem(value: 'Cancelled', child: Text('Cancelled')),
+                                        ],
+                                        onChanged: (newStatus) {
+                                          if (newStatus != null) {
+                                            _updateStatus(booking, newStatus);
+                                          }
+                                        },
+                                      ),
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit, color: Colors.blue),
+                                            onPressed: () async {
+                                              bool? updated = await Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) => AddEditBookingPage(booking: booking),
+                                                ),
+                                              );
+                                              if (updated == true) {
+                                                _loadBookings();
+                                              }
+                                            },
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete, color: Colors.red),
+                                            onPressed: () => _deleteBooking(booking.id!),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
